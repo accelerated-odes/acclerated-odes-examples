@@ -6,6 +6,17 @@
 #include "RealVector.H"
 #include "WallTimer.H"
 
+#ifdef USE_CVODE
+#include <cvode/cvode.h>
+#include <nvector/nvector_serial.h>
+#ifdef USE_KLU
+#include <sunlinsol/sunlinsol_klu.h>
+#include <sunmatrix/sunmatrix_sparse.h>
+#else
+#include <sunlinsol/sunlinsol_spgmr.h>
+#endif
+#endif
+
 template<class SparseLinearSolver, class SystemClass, size_t order>
 void do_sdc_host(Real* y_initial, Real* y_final, 
 		 Real start_time, Real end_time, Real start_timestep,
@@ -46,6 +57,106 @@ void do_sdc_host(Real* y_initial, Real* y_final,
   }
 }
 
+#ifdef USE_CVODE
+int cv_rhs(Real t, N_Vector y, N_Vector ydot, void *user_data)
+{
+  // TODO: need a way to set the underlying data of a RealVector
+  // so we can wrap the data pointer in a RealVector before calling
+  // VodeSystem::evaluate(t, yvec, rhsvec).
+  Real *ydata = N_VGetArrayPointer(y);
+  Real *rhsdata = N_VGetArrayPointer(ydot);
+  rhsdata[0] = -0.04 * ydata[0] + 1.e4 * ydata[1] * ydata[2];
+  rhsdata[1] =  0.04 * ydata[0] - 1.e4 * ydata[1] * ydata[2] - 3.e7 * ydata[1] * ydata[1];
+  rhsdata[2] =  3.e7 * ydata[1] * ydata[1];
+  return 0;
+}
+
+#ifdef USE_KLU
+int cv_jac(Real t, N_Vector y, N_Vector f_y, SUNMatrix Jac, void *user_data,
+  N_Vector tmp1, N_Vector tmp2, N_Vector tmp3)
+{
+  // TODO: need a way to set the underlying data of a RealVector/RealSparseMatrix
+  // so we can wrap the data pointers before calling
+  // VodeSystem::evaluate(t, yvec, jac).
+  Real *ydata = N_VGetArrayPointer(y);
+  Real *rhsdata = N_VGetArrayPointer(f_y);
+  Real *jacdata = SUNSparseMatrix_Data(Jac);
+  rhsdata[0] = -0.04 * ydata[0] + 1.e4 * ydata[1] * ydata[2];
+  rhsdata[1] =  0.04 * ydata[0] - 1.e4 * ydata[1] * ydata[2] - 3.e7 * ydata[1] * ydata[1];
+  rhsdata[2] =  3.e7 * ydata[1] * ydata[1];
+
+  jacdata[0] = -0.04e0;
+  jacdata[1] =  1.e4 * ydata[2];
+  jacdata[2] =  1.e4 * ydata[1];
+
+  jacdata[3] =  0.04e0;
+  jacdata[4] = -1.e4 * ydata[2] - 6.e7 * ydata[1];
+  jacdata[5] = -1.e4 * ydata[1];
+
+  jacdata[6] = 6.e7 * ydata[1];
+  jacdata[7] = 0.0e0;
+  return 0;
+}
+#endif
+
+template<class SystemClass, size_t order>
+void do_cvode(Real* y_initial, Real* y_final, 
+		 Real start_time, Real end_time, Real start_timestep,
+		 Real tolerance, size_t maximum_newton_iters, 
+		 bool fail_if_maximum_newton, Real maximum_steps,
+		 Real epsilon, size_t size, bool use_adaptive_timestep) {
+
+  int retval;
+  void *cvode_mem;
+  N_Vector yi, yf;
+  SUNMatrix A;
+  SUNLinearSolver LS;
+  Real t;
+
+  yi = NULL;
+  yf = NULL;
+  A = NULL;
+  LS = NULL;
+  cvode_mem = NULL;
+
+  for (size_t global_index = 0; global_index < size; global_index++) {
+
+    yi = N_VMake_Serial(SystemClass::neqs,
+      &y_initial[global_index * SystemClass::neqs]);
+    yf = N_VMake_Serial(SystemClass::neqs,
+      &y_final[global_index * SystemClass::neqs]);
+
+    cvode_mem = CVodeCreate(CV_BDF);
+    retval = CVodeInit(cvode_mem, cv_rhs, start_time, yi);
+    retval = CVodeSStolerances(cvode_mem, tolerance, tolerance*100);
+    retval = CVodeSetMaxNumSteps(cvode_mem, maximum_steps);
+
+#ifdef USE_KLU
+    A = SUNSparseMatrix(SystemClass::neqs, SystemClass::neqs, SystemClass::nnz, CSR_MAT);  
+    LS = SUNLinSol_KLU(yi, A);
+    retval = CVodeSetLinearSolver(cvode_mem, LS, A); 
+    retval = CVodeSetJacFn(cvode_mem, cv_jac);
+#else
+    LS = SUNLinSol_SPGMR(yi, PREC_NONE, 0);
+    retval = CVodeSetLinearSolver(cvode_mem, LS, NULL); 
+#endif
+
+    retval = CVode(cvode_mem, end_time, yf, &t, CV_NORMAL);
+    if (retval != CV_SUCCESS) {
+      std::cout << "ERROR: CVode returned " << retval << std::endl;
+    }
+    
+    N_VDestroy(yi);
+    N_VDestroy(yf);
+#ifdef USE_KLU
+    SUNMatDestroy(A);
+#endif
+    SUNLinSolFree(LS);
+    CVodeFree(&cvode_mem);
+
+  }
+}
+#endif
 
 int main(int argc, char* argv[]) {
 
@@ -80,15 +191,14 @@ int main(int argc, char* argv[]) {
   Real epsilon = std::numeric_limits<Real>::epsilon();
   bool use_adaptive_timestep = false;
 
-  const int nThreads = 32;
-  const size_t WarpBatchSize = 128;
-  const int nBlocks = static_cast<int>(ceil(((double) num_systems)/(double) WarpBatchSize));
-
   std::cout << "Starting integration ..." << std::endl;
 
   timer.start_wallclock();
 
-#if USE_CVODE
+#ifdef USE_CVODE
+  do_cvode<VodeSystem, order>(y_initial, y_final, start_time, end_time,
+    start_timestep, tolerance, maximum_newton_iters, fail_if_maximum_newton,
+    maximum_steps, epsilon, num_systems, use_adaptive_timestep);
 #else
   do_sdc_host<SparseGaussJordan, VodeSystem, order>(y_initial, y_final,
 						    start_time, end_time, start_timestep,
@@ -110,8 +220,20 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
   }
 
+
   std::cout << "Finished execution on host CPU" << std::endl;
   std::cout << std::endl << "Integration walltime (s): " << timer.get_walltime() << std::endl;
+
+#ifdef USE_CVODE
+  std::cout << "Integrator: CVODE" << std::endl;
+#ifdef USE_KLU
+  std::cout << "Linear Solver: KLU" << std::endl;
+#else
+  std::cout << "Linear Solver: SPGMR" << std::endl;
+#endif
+#else
+  std::cout << "Integrator: SDC" << std::endl;
+#endif
 
   delete[] y_initial;
   delete[] y_final;

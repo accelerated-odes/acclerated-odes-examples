@@ -10,6 +10,7 @@ project(ACCELERATED-ODES-EXAMPLES CXX)
 # build options
 option(ENABLE_CUDA "Enable CUDA" OFF)
 option(ENABLE_CVODE "Enable CVODE" OFF)
+option(ENABLE_KLU "Enable KLU (for direct sparse solve)" OFF)
 
 # check for CUDA
 if(ENABLE_CUDA)
@@ -51,6 +52,7 @@ if(NOT TARGET SDC)
 endif()
 
 if(ENABLE_CVODE)
+
   # check for SUNDIALS location
   if(NOT SUNDIALS_DIR)
     set(SUNDIALS_DIR "" CACHE FILEPATH "SUNDIALS install directory")
@@ -70,12 +72,55 @@ if(ENABLE_CVODE)
     message(FATAL_ERROR "Looking for CVODE... failed")
   endif()
 
-  # Create target for SUNDIALS
+  # Create target for cvode
   if(NOT TARGET SUNDIALS::cvode)
     add_library(SUNDIALS::cvode UNKNOWN IMPORTED)
     set_property(TARGET SUNDIALS::cvode PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${SUNDIALS_DIR}/include)
     set_property(TARGET SUNDIALS::cvode PROPERTY IMPORTED_LOCATION ${CVODE_LIBS})
   endif()
+
+endif()
+
+if(ENABLE_KLU)
+
+  # find KLU SUNLinearSolver library
+  find_library(SUNLS_KLU_LIBS sundials_sunlinsolklu
+    PATHS ${SUNDIALS_DIR}/lib ${SUNDIALS_DIR}/lib64
+    NO_DEFAULT_PATH)
+
+  # Create target for KLU linear solver
+  if(NOT TARGET SUNDIALS::sunls_klu)
+    add_library(SUNDIALS::sunls_klu UNKNOWN IMPORTED)
+    set_property(TARGET SUNDIALS::sunls_klu PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${SUNDIALS_DIR}/include)
+    set_property(TARGET SUNDIALS::sunls_klu PROPERTY IMPORTED_LOCATION ${SUNLS_KLU_LIBS})
+  endif()
+
+  # check for KLU location
+  if(NOT KLU_DIR)
+    set(KLU_DIR "" CACHE FILEPATH "KLU install directory")
+    message(FATAL_ERROR "KLU_DIR is not set")
+  else()
+    set(KLU_DIR "${KLU_DIR}" CACHE FILEPATH "KLU install directory")
+  endif()
+  
+  # find KLU library
+  find_library(KLU_LIBS klu
+    PATHS ${KLU_DIR}/lib ${KLU_DIR}/lib64
+    NO_DEFAULT_PATH)
+
+  if(KLU_LIBS)
+    message(STATUS "Looking for KLU... success")
+  else()
+    message(FATAL_ERROR "Looking for KLU... failed")
+  endif()
+
+  # Create target for KLU
+  if(NOT TARGET SUITESPARSE::klu)
+    add_library(SUITESPARSE::klu UNKNOWN IMPORTED)
+    set_property(TARGET SUITESPARSE::klu PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${KLU_DIR}/include)
+    set_property(TARGET SUITESPARSE::klu PROPERTY IMPORTED_LOCATION ${KLU_LIBS})
+  endif()
+
 endif()
 
 # extra link library

@@ -1,3 +1,3 @@
 # ACCELERATED-ODES-EXAMPLES
 
-Example problems for testing out accelrator ODE integrators.
+Example problems for testing out accelerator ODE integrators.

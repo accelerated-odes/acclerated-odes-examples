@@ -3,7 +3,11 @@ add_executable(kinetics1D main.cpp)
 target_link_libraries(kinetics1D PUBLIC AMReX::amrex SDC::SDC)
 if(ENABLE_CVODE)
   target_link_libraries(kinetics1D PUBLIC SUNDIALS::cvode)
-  target_compile_definitions(kinetics1D_cuda PUBLIC USE_CVODE)
+  target_compile_definitions(kinetics1D PUBLIC USE_CVODE)
+  if(ENABLE_KLU)
+    target_link_libraries(kinetics1D PUBLIC SUNDIALS::sunls_klu SUITESPARSE::klu)
+    target_compile_definitions(kinetics1D PUBLIC USE_KLU)
+  endif()
 endif()
 
 # compile example for GPU
