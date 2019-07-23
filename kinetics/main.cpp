@@ -128,8 +128,10 @@ void do_cvode(Real* y_initial, Real* y_final,
 
     cvode_mem = CVodeCreate(CV_BDF);
     retval = CVodeInit(cvode_mem, cv_rhs, start_time, yi);
-    retval = CVodeSStolerances(cvode_mem, tolerance, tolerance*100);
+    retval = CVodeSStolerances(cvode_mem, tolerance, tolerance);
     retval = CVodeSetMaxNumSteps(cvode_mem, maximum_steps);
+    retval = CVodeSetFixedOrd(cvode_mem, order);
+    retval = CVodeSetFixedStep(cvode_mem, start_timestep);
 
 #ifdef USE_KLU
     A = SUNSparseMatrix(SystemClass::neqs, SystemClass::neqs, SystemClass::nnz, CSR_MAT);  
@@ -142,10 +144,7 @@ void do_cvode(Real* y_initial, Real* y_final,
 #endif
 
     retval = CVode(cvode_mem, end_time, yf, &t, CV_NORMAL);
-    if (retval != CV_SUCCESS) {
-      std::cout << "ERROR: CVode returned " << retval << std::endl;
-    }
-    
+
     N_VDestroy(yi);
     N_VDestroy(yf);
 #ifdef USE_KLU
@@ -154,6 +153,11 @@ void do_cvode(Real* y_initial, Real* y_final,
     SUNLinSolFree(LS);
     CVodeFree(&cvode_mem);
 
+    if (retval != CV_SUCCESS) {
+      std::cout << "ERROR: CVode returned " << retval << std::endl;
+      break;
+    }
+    
   }
 }
 #endif
@@ -164,7 +168,7 @@ int main(int argc, char* argv[]) {
 
   size_t num_systems = grid_size * grid_size * grid_size;
 
-  const size_t order = 4;
+  const size_t order = 3; // order 4 causes CVODE to error out unless timestep is reduced
 
   WallTimer timer;
 
