@@ -5,16 +5,22 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
   message(FATAL_ERROR "In-source build prohibited.")
 endif()
 
-project(ACCELERATED-ODES-EXAMPLES CXX)
+project(ACCELERATED-ODES-EXAMPLES CXX Fortran)
 
 # build options
 option(ENABLE_CUDA "Enable CUDA" OFF)
+option(ENABLE_OpenMP "Enable OpenMP" OFF)
 option(ENABLE_CVODE "Enable CVODE" OFF)
 option(ENABLE_KLU "Enable KLU (for direct sparse solve)" OFF)
 
 # check for CUDA
 if(ENABLE_CUDA)
   enable_language(CUDA)
+endif()
+
+# check for OpenMP
+if(ENABLE_OpenMP)
+  find_package(OpenMP REQUIRED)
 endif()
 
 # check for AMREX location
@@ -122,6 +128,7 @@ if(ENABLE_KLU)
   endif()
 
 endif()
+
 
 # extra link library
 set(EXTRA_LINK_LIBS gfortran)

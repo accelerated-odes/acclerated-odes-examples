@@ -6,6 +6,10 @@
 #include "RealVector.H"
 #include "WallTimer.H"
 
+#ifdef USE_OPENMP
+#include <omp.h>
+#endif
+
 #ifdef USE_CVODE
 #include <cvode/cvode.h>
 #include <nvector/nvector_serial.h>
@@ -119,6 +123,9 @@ void do_cvode(Real* y_initial, Real* y_final,
   LS = NULL;
   cvode_mem = NULL;
 
+#ifdef USE_OPENMP
+  #pragma omp parallel for private(cvode_mem, yi, yf, A, LS, t, retval)
+#endif
   for (size_t global_index = 0; global_index < size; global_index++) {
 
     yi = N_VMake_Serial(SystemClass::neqs,
