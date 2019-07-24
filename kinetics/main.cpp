@@ -130,8 +130,10 @@ void do_cvode(Real* y_initial, Real* y_final,
     retval = CVodeInit(cvode_mem, cv_rhs, start_time, yi);
     retval = CVodeSStolerances(cvode_mem, tolerance, tolerance);
     retval = CVodeSetMaxNumSteps(cvode_mem, maximum_steps);
-    retval = CVodeSetFixedOrd(cvode_mem, order);
-    retval = CVodeSetFixedStep(cvode_mem, start_timestep);
+    if (!use_adaptive_timestep) {
+      retval = CVodeSetFixedOrd(cvode_mem, order);
+      retval = CVodeSetFixedStep(cvode_mem, start_timestep);
+    }
 
 #ifdef USE_KLU
     A = SUNSparseMatrix(SystemClass::neqs, SystemClass::neqs, SystemClass::nnz, CSR_MAT);  
@@ -153,12 +155,11 @@ void do_cvode(Real* y_initial, Real* y_final,
     SUNLinSolFree(LS);
     CVodeFree(&cvode_mem);
 
-    if (retval != CV_SUCCESS) {
+    if (retval != CV_SUCCESS)
       std::cout << "ERROR: CVode returned " << retval << std::endl;
-      break;
-    }
-    
+
   }
+
 }
 #endif
 
