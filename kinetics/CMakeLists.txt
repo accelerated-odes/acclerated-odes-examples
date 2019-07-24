@@ -8,6 +8,10 @@ if(ENABLE_CVODE)
     target_link_libraries(kinetics1D PUBLIC SUNDIALS::sunls_klu SUITESPARSE::klu)
     target_compile_definitions(kinetics1D PUBLIC USE_KLU)
   endif()
+  if(ENABLE_OpenMP AND OpenMP_CXX_FOUND)
+    target_link_libraries(kinetics1D PUBLIC OpenMP::OpenMP_CXX)
+    target_compile_definitions(kinetics1D PUBLIC USE_OPENMP)
+  endif()
 endif()
 
 # compile example for GPU
